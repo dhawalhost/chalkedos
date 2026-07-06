@@ -53,7 +53,8 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (htt
 
 		attendanceRoutes(r, pool)
 		aiRoutes(r, pool, aiClient, cfg.AIEnabled())
-		// TODO(chalked): feeRoutes(r, pool), communicationRoutes(r, pool),
+		feeRoutes(r, pool)
+		// TODO(chalked): communicationRoutes(r, pool),
 		// timetableRoutes(r, pool), dashboardRoutes(r, pool) — scaffold
 		// these next, following the same pattern as attendance.go.
 	})

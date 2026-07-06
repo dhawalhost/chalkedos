@@ -14,6 +14,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/dhawalhost/chalkedos/internal/ai"
 	"github.com/dhawalhost/chalkedos/internal/config"
 	"github.com/dhawalhost/chalkedos/internal/middleware"
 	"github.com/dhawalhost/chalkedos/internal/supabase"
@@ -46,14 +47,15 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (htt
 		r.Post("/otp/verify", verifyOTP(authClient, pool))
 	})
 
+	aiClient := ai.NewClient(cfg.AnthropicAPIKey)
 	r.Route("/api/{schoolSlug}", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(jwks, middleware.NewSchoolResolver(pool)))
 
 		attendanceRoutes(r, pool)
-		// TODO(chalked): feeRoutes(r, pool), aiRoutes(r, pool, cfg),
-		// communicationRoutes(r, pool), timetableRoutes(r, pool),
-		// dashboardRoutes(r, pool) — scaffold these next, following the
-		// same pattern as attendance.go.
+		aiRoutes(r, pool, aiClient, cfg.AIEnabled())
+		// TODO(chalked): feeRoutes(r, pool), communicationRoutes(r, pool),
+		// timetableRoutes(r, pool), dashboardRoutes(r, pool) — scaffold
+		// these next, following the same pattern as attendance.go.
 	})
 
 	r.Post("/api/webhooks/wati", watiWebhook(cfg, pool))

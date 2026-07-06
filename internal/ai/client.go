@@ -49,14 +49,27 @@ type messageResponse struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
+	Usage struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+// Result is a completed generation: the model's text plus the token
+// counts the API reported, which callers use to record cost per
+// generation (ai_generations.cost_inr).
+type Result struct {
+	Text         string
+	InputTokens  int
+	OutputTokens int
 }
 
 // Generate sends a system prompt + user input to Claude and returns the
-// raw text response. Callers (e.g. internal/http/ai.go, not yet
-// scaffolded) are responsible for parsing that text as JSON against the
-// schema documented in the AI Prompt Library, and for retrying on a
-// schema mismatch — this function does not validate output shape.
-func (c *Client) Generate(ctx context.Context, systemPrompt, userInput string) (string, error) {
+// raw text response with token usage. Callers (internal/http/ai.go) are
+// responsible for parsing the text as JSON against the schema documented
+// in the AI Prompt Library, and for retrying on a schema mismatch — this
+// function does not validate output shape.
+func (c *Client) Generate(ctx context.Context, systemPrompt, userInput string) (*Result, error) {
 	reqBody := messageRequest{
 		Model:     anthropicModel,
 		MaxTokens: 2048,
@@ -66,12 +79,12 @@ func (c *Client) Generate(ctx context.Context, systemPrompt, userInput string) (
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("marshaling request: %w", err)
+		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, anthropicAPIURL, bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("building request: %w", err)
+		return nil, fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.apiKey)
@@ -79,20 +92,20 @@ func (c *Client) Generate(ctx context.Context, systemPrompt, userInput string) (
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("calling Claude API: %w", err)
+		return nil, fmt.Errorf("calling Claude API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Claude API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("Claude API returned status %d", resp.StatusCode)
 	}
 
 	var parsed messageResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", fmt.Errorf("decoding response: %w", err)
+		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 	if len(parsed.Content) == 0 {
-		return "", fmt.Errorf("empty response content")
+		return nil, fmt.Errorf("empty response content")
 	}
 
 	// Defensive: strip markdown fences if the model adds them despite
@@ -101,5 +114,9 @@ func (c *Client) Generate(ctx context.Context, systemPrompt, userInput string) (
 	text = strings.TrimPrefix(text, "```json")
 	text = strings.TrimPrefix(text, "```")
 	text = strings.TrimSuffix(text, "```")
-	return strings.TrimSpace(text), nil
+	return &Result{
+		Text:         strings.TrimSpace(text),
+		InputTokens:  parsed.Usage.InputTokens,
+		OutputTokens: parsed.Usage.OutputTokens,
+	}, nil
 }

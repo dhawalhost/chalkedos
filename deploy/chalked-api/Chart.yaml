@@ -1,0 +1,6 @@
+apiVersion: v2
+name: chalked-api
+description: Chalked OS Go backend — Helm chart per the Technical Architecture document
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

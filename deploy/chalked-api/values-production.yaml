@@ -1,0 +1,21 @@
+# Production overrides — DigitalOcean (current default), Bangalore region.
+# See the Technical Architecture document's provider comparison for why.
+#
+# To move to another cloud: copy this file, change only the annotations
+# and storageClass below, point ArgoCD at the new cluster. Everything
+# else — templates, application code, Dockerfile — stays identical.
+
+replicaCount: 2
+
+service:
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-size-unit: "1"
+
+storageClass: do-block-storage
+
+ingress:
+  host: "api.chalked.in"
+  tls: true
+
+env:
+  ENVIRONMENT: "production"

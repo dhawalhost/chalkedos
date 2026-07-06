@@ -1,0 +1,64 @@
+/* Chalked OS design tokens — extracted from the Design System & Brand
+   Guidelines document. Drop this into the Next.js app's globals.css (or
+   convert to a Tailwind theme extension) when frontend work starts.
+   Full rationale for each color/type choice is in that document. */
+
+:root {
+  /* Brand core */
+  --ink: #1A1A1A;
+  --teal: #0F6E56;
+  --teal-dark: #085041;
+  --teal-darker: #063D31;
+  --teal-light: #E1F5EE;
+  --mid-teal: #5DCAA5;
+  --chalk: #FBFBFA;
+  --slate: #7C8B86;
+
+  /* Functional accents — each has exactly one job, never used decoratively */
+  --amber: #BA7517;       /* fee / money elements ONLY */
+  --amber-light: #FAEEDA;
+  --purple: #5E4DB2;      /* AI-powered features ONLY */
+  --purple-light: #EEEDFE;
+  --success: #1D9E75;     /* confirmations: "paid", "sent" */
+  --danger: #C0392B;      /* absent, overdue, errors — sparingly */
+  --danger-light: #FAECE7;
+
+  /* Neutrals */
+  --n-900: #1A1A1A;
+  --n-700: #3D4744;
+  --n-500: #7C8B86;
+  --n-300: #C9D4D0;
+  --n-200: #E4EAE8;
+  --n-100: #F2F5F4;
+  --n-50:  #F8FAF9;
+  --white: #FFFFFF;
+
+  --line: #E4EAE8;
+  --radius: 14px;
+  --radius-sm: 8px;
+
+  /* Spacing scale — 4px base grid. 44px minimum tap target is
+     non-negotiable per the Design System doc (teachers tap fast,
+     standing in a classroom). */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --tap-min: 44px;
+}
+
+/* Typography — Inter throughout, chosen for Devanagari companion
+   support (Noto Sans Devanagari) and legibility at small sizes on
+   low-end Android screens. */
+.type-display-xl { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.type-heading-lg { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+.type-heading-md { font-size: 18px; font-weight: 700; }
+.type-body       { font-size: 16px; font-weight: 400; line-height: 1.6; }
+.type-label-caps { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--slate); }
+
+/* Component radius reference:
+   8px  -> inputs, chips
+   14px -> cards
+   22px -> phone-frame mockups (docs only, not real UI) */

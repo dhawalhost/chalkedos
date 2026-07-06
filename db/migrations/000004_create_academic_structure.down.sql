@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS class_subjects;
+DROP TABLE IF EXISTS subjects;
+DROP TABLE IF EXISTS sections;
+DROP TABLE IF EXISTS classes;

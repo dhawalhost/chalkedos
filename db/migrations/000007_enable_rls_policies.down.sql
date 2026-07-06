@@ -1,0 +1,13 @@
+DROP POLICY IF EXISTS attendance_update ON attendance_records;
+DROP POLICY IF EXISTS attendance_write ON attendance_records;
+DROP POLICY IF EXISTS attendance_read ON attendance_records;
+DROP POLICY IF EXISTS school_isolation ON teacher_assignments;
+DROP POLICY IF EXISTS school_isolation ON guardians;
+DROP POLICY IF EXISTS school_isolation ON students;
+DROP POLICY IF EXISTS school_isolation ON class_subjects;
+DROP POLICY IF EXISTS school_isolation ON subjects;
+DROP POLICY IF EXISTS school_isolation ON sections;
+DROP POLICY IF EXISTS school_isolation ON classes;
+DROP POLICY IF EXISTS school_isolation ON user_profiles;
+DROP POLICY IF EXISTS school_isolation ON academic_years;
+DROP POLICY IF EXISTS school_isolation ON schools;

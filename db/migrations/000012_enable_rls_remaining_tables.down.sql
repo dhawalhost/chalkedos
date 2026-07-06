@@ -1,0 +1,10 @@
+DROP POLICY IF EXISTS school_isolation ON substitutions;
+DROP POLICY IF EXISTS school_isolation ON timetable_slots;
+DROP POLICY IF EXISTS school_isolation ON ptm_bookings;
+DROP POLICY IF EXISTS school_isolation ON ptm_slots;
+DROP POLICY IF EXISTS school_isolation ON whatsapp_messages;
+DROP POLICY IF EXISTS school_isolation ON ai_usage_quota;
+DROP POLICY IF EXISTS school_isolation ON ai_generations;
+DROP POLICY IF EXISTS school_isolation ON fee_reminders_log;
+DROP POLICY IF EXISTS school_isolation ON fee_payments;
+DROP POLICY IF EXISTS school_isolation ON fee_structures;

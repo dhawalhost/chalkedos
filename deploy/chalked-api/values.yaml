@@ -1,0 +1,57 @@
+# Default values — provider-agnostic. Environment-specific overrides
+# (load balancer annotations, storage class) live in values-staging.yaml
+# and values-production.yaml, never here, per the Technical Architecture
+# document's portability design.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/dhawalhost/chalkedos
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 15
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+ingress:
+  enabled: true
+  className: "traefik"
+  host: "api.chalked.in"
+  tls: true
+
+storageClass: ""  # set per-provider in environment values
+
+env:
+  ENVIRONMENT: "production"
+  PORT: "8080"
+
+# Secrets (DATABASE_URL, SUPABASE_JWT_SECRET, ANTHROPIC_API_KEY, etc.)
+# are intentionally NOT here — they're injected via a Kubernetes Secret
+# referenced by name, created out-of-band (e.g. via sealed-secrets or
+# the cluster provider's secret manager), never committed to Git.
+secretName: chalked-api-secrets

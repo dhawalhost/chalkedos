@@ -16,6 +16,7 @@ import (
 
 	"github.com/dhawalhost/chalkedos/internal/config"
 	"github.com/dhawalhost/chalkedos/internal/middleware"
+	"github.com/dhawalhost/chalkedos/internal/supabase"
 )
 
 // NewRouter builds the full route tree for the API service. It fetches
@@ -37,10 +38,12 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (htt
 
 	r.Get("/healthz", healthCheck(pool))
 
+	authClient := supabase.NewAuthClient(cfg.SupabaseURL, cfg.SupabasePublishableKey)
+	limiter := newOTPLimiter()
 	r.Route("/api/auth", func(r chi.Router) {
 		// Public — no auth required. See internal/http/auth.go.
-		r.Post("/otp/request", requestOTP())
-		r.Post("/otp/verify", verifyOTP(cfg))
+		r.Post("/otp/request", requestOTP(authClient, limiter))
+		r.Post("/otp/verify", verifyOTP(authClient, pool))
 	})
 
 	r.Route("/api/{schoolSlug}", func(r chi.Router) {

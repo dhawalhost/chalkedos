@@ -25,6 +25,15 @@ type Config struct {
 	// Supabase projects publish this instead of a static HS256 secret.
 	SupabaseJWKSURL string `env:"SUPABASE_JWKS_URL,required"`
 
+	// SupabaseURL is the project's base URL (https://<ref>.supabase.co),
+	// used to reach Supabase Auth's REST endpoints for phone OTP.
+	SupabaseURL string `env:"SUPABASE_URL,required"`
+
+	// SupabasePublishableKey is the client-safe API key sent as the
+	// `apikey` header on Supabase Auth requests. Publishable by design —
+	// RLS and Auth are the security boundary, not this key.
+	SupabasePublishableKey string `env:"SUPABASE_PUBLISHABLE_KEY,required"`
+
 	// AnthropicAPIKey authenticates calls to the Claude API. Optional
 	// until the AI endpoints ship: internal/http/ai.go must refuse (503,
 	// not crash) when unset — check AIEnabled before calling Generate.

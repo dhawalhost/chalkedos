@@ -45,6 +45,11 @@ type Config struct {
 	WATIAPIKey  string `env:"WATI_API_KEY"`
 	WATIBaseURL string `env:"WATI_BASE_URL"`
 
+	// PTMTokenSecret signs the public PTM booking tokens parents receive
+	// over WhatsApp (F-07: signed token, not JWT — parents never log in).
+	// Optional: without it, the public PTM endpoints return 503.
+	PTMTokenSecret string `env:"PTM_TOKEN_SECRET"`
+
 	// WATIWebhookSecret verifies inbound WATI webhook signatures (HMAC),
 	// per the API Specification's webhook auth model. Optional: without
 	// it the webhook endpoint rejects (and logs) everything, since no

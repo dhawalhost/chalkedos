@@ -54,10 +54,13 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (htt
 		attendanceRoutes(r, pool)
 		aiRoutes(r, pool, aiClient, cfg.AIEnabled())
 		feeRoutes(r, pool)
-		// TODO(chalked): communicationRoutes(r, pool),
-		// timetableRoutes(r, pool), dashboardRoutes(r, pool) — scaffold
-		// these next, following the same pattern as attendance.go.
+		communicationRoutes(r, pool, cfg)
+		// TODO(chalked): timetableRoutes(r, pool), dashboardRoutes(r, pool)
+		// — scaffold these next, following the same pattern.
 	})
+
+	// Parent-facing PTM booking: signed-token auth, not JWT (F-07).
+	publicPTMRoutes(r, pool, cfg)
 
 	r.Post("/api/webhooks/wati", watiWebhook(cfg, pool))
 

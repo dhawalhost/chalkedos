@@ -2,6 +2,8 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -12,7 +14,6 @@ import (
 
 	"github.com/dhawalhost/chalkedos/internal/db"
 	"github.com/dhawalhost/chalkedos/internal/db/sqlc"
-	"github.com/dhawalhost/chalkedos/internal/middleware"
 )
 
 // parseUUID and parseDate wrap pgtype's Scan so handlers can turn client-
@@ -34,8 +35,25 @@ func attendanceRoutes(r chi.Router, pool *pgxpool.Pool) {
 	r.Route("/attendance", func(r chi.Router) {
 		r.Get("/today", getTodayAttendance(pool))
 		r.Post("/", submitAttendance(pool))
+		r.Patch("/{id}", editAttendance(pool))
+		r.Get("/history", getAttendanceHistory(pool))
 		r.Get("/flagged", getFlaggedStudents(pool))
+		r.Get("/summary", getAttendanceSummary(pool))
 	})
+}
+
+// istZone is the school-day timezone for the same-day-only edit rule
+// (F-02). Fixed offset rather than tzdata lookup: IST has no DST, and a
+// FixedZone can't fail on containers shipped without a tz database.
+var istZone = time.FixedZone("IST", 5*3600+30*60)
+
+// todayIST is the current school day as YYYY-MM-DD.
+func todayIST() string {
+	return time.Now().In(istZone).Format("2006-01-02")
+}
+
+var validAttendanceStatus = map[string]bool{
+	"present": true, "absent": true, "late": true, "leave": true,
 }
 
 type attendanceRecord struct {
@@ -55,9 +73,8 @@ type submitAttendanceRequest struct {
 // downstream WhatsApp alerts for absences).
 func submitAttendance(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := middleware.FromContext(r.Context())
-		if !ok {
-			writeErr(w, http.StatusUnauthorized, "MISSING_CLAIMS", "Authentication required.")
+		claims := requireRoles(w, r, "teacher", "admin")
+		if claims == nil {
 			return
 		}
 
@@ -69,6 +86,18 @@ func submitAttendance(pool *pgxpool.Pool) http.HandlerFunc {
 		if req.SectionID == "" || req.Date == "" || len(req.Records) == 0 {
 			writeErr(w, http.StatusBadRequest, "MISSING_FIELDS", "section_id, date, and records are required.")
 			return
+		}
+		// F-02: attendance is markable and editable for the current school
+		// day only — reject any other date at the handler level.
+		if req.Date != todayIST() {
+			writeErr(w, http.StatusUnprocessableEntity, "NOT_SAME_DAY", "Attendance can only be marked for today's date.")
+			return
+		}
+		for i, rec := range req.Records {
+			if !validAttendanceStatus[rec.Status] {
+				writeErr(w, http.StatusBadRequest, "INVALID_FIELD", fmt.Sprintf("records[%d].status must be present|absent|late|leave.", i))
+				return
+			}
 		}
 
 		sectionID, err := parseUUID(req.SectionID)
@@ -144,9 +173,8 @@ func submitAttendance(pool *pgxpool.Pool) http.HandlerFunc {
 // getTodayAttendance implements GET /api/:school/attendance/today.
 func getTodayAttendance(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := middleware.FromContext(r.Context())
-		if !ok {
-			writeErr(w, http.StatusUnauthorized, "MISSING_CLAIMS", "Authentication required.")
+		claims := requireRoles(w, r, "teacher", "admin")
+		if claims == nil {
 			return
 		}
 
@@ -161,7 +189,7 @@ func getTodayAttendance(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		today := time.Now().Format("2006-01-02")
+		today := todayIST()
 		date, err := parseDate(today)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not compute today's date.")
@@ -214,9 +242,8 @@ func getTodayAttendance(pool *pgxpool.Pool) http.HandlerFunc {
 // column, to avoid a trigger keeping a redundant field in sync).
 func getFlaggedStudents(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := middleware.FromContext(r.Context())
-		if !ok {
-			writeErr(w, http.StatusUnauthorized, "MISSING_CLAIMS", "Authentication required.")
+		claims := requireRoles(w, r, "admin", "principal")
+		if claims == nil {
 			return
 		}
 
@@ -250,5 +277,183 @@ func getFlaggedStudents(pool *pgxpool.Pool) http.HandlerFunc {
 			})
 		}
 		writeJSON(w, http.StatusOK, flagged)
+	}
+}
+
+// editAttendance implements PATCH /api/:school/attendance/:id — edits a
+// single record's status, same school day only (F-02): the record's date
+// must be today, enforced in the UPDATE's WHERE clause.
+func editAttendance(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := requireRoles(w, r, "teacher", "admin")
+		if claims == nil {
+			return
+		}
+
+		recordID, err := parseUUID(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "INVALID_FIELD", "id is not a valid UUID.")
+			return
+		}
+
+		var req struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validAttendanceStatus[req.Status] {
+			writeErr(w, http.StatusBadRequest, "INVALID_BODY", "status must be present|absent|late|leave.")
+			return
+		}
+
+		editedBy, err := parseUUID(claims.Subject)
+		if err != nil {
+			writeErr(w, http.StatusUnauthorized, "INVALID_CLAIMS", "Token's subject is not a valid UUID.")
+			return
+		}
+		today, err := parseDate(todayIST())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not compute today's date.")
+			return
+		}
+
+		err = db.WithRLSClaims(r.Context(), pool, db.RLSClaims{
+			Subject:  claims.Subject,
+			SchoolID: claims.SchoolID,
+			Role:     claims.Role,
+		}, func(tx pgx.Tx) error {
+			_, err := sqlc.New(tx).UpdateAttendanceStatus(r.Context(), sqlc.UpdateAttendanceStatusParams{
+				ID:       recordID,
+				Status:   req.Status,
+				EditedBy: editedBy,
+				Date:     today,
+			})
+			return err
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Unknown id, other school's record (RLS), or a past day's
+			// record — indistinguishable by design.
+			writeErr(w, http.StatusNotFound, "NOT_FOUND", "Resource not found.")
+			return
+		}
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "UPDATE_FAILED", "Could not update attendance.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"updated": true})
+	}
+}
+
+// getAttendanceHistory implements GET /api/:school/attendance/history
+// ?section_id=&from=&to=.
+func getAttendanceHistory(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := requireRoles(w, r, "teacher", "admin", "principal")
+		if claims == nil {
+			return
+		}
+
+		sectionID, err := parseUUID(r.URL.Query().Get("section_id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "INVALID_FIELD", "section_id query parameter must be a valid UUID.")
+			return
+		}
+		from, err := parseDate(r.URL.Query().Get("from"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "INVALID_FIELD", "from must be YYYY-MM-DD.")
+			return
+		}
+		to, err := parseDate(r.URL.Query().Get("to"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "INVALID_FIELD", "to must be YYYY-MM-DD.")
+			return
+		}
+		if to.Time.Before(from.Time) || to.Time.Sub(from.Time) > 366*24*time.Hour {
+			writeErr(w, http.StatusBadRequest, "INVALID_FIELD", "from..to must be a valid range of at most one year.")
+			return
+		}
+
+		var rows []sqlc.GetAttendanceHistoryRow
+		err = db.WithRLSClaims(r.Context(), pool, db.RLSClaims{
+			Subject:  claims.Subject,
+			SchoolID: claims.SchoolID,
+			Role:     claims.Role,
+		}, func(tx pgx.Tx) error {
+			var err error
+			rows, err = sqlc.New(tx).GetAttendanceHistory(r.Context(), sqlc.GetAttendanceHistoryParams{
+				SectionID: sectionID,
+				FromDate:  from,
+				ToDate:    to,
+			})
+			return err
+		})
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "FETCH_FAILED", "Could not load attendance history.")
+			return
+		}
+
+		records := make([]map[string]interface{}, 0, len(rows))
+		for _, row := range rows {
+			records = append(records, map[string]interface{}{
+				"student_id": row.StudentID,
+				"full_name":  row.FullName,
+				"date":       row.Date.Time.Format("2006-01-02"),
+				"status":     row.Status,
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{"records": records})
+	}
+}
+
+// getAttendanceSummary implements GET /api/:school/attendance/summary
+// ?date= — school-wide attendance percentage for a date (F-02 dashboard).
+func getAttendanceSummary(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := requireRoles(w, r, "admin", "principal")
+		if claims == nil {
+			return
+		}
+
+		dateStr := r.URL.Query().Get("date")
+		if dateStr == "" {
+			dateStr = todayIST()
+		}
+		date, err := parseDate(dateStr)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "INVALID_FIELD", "date must be YYYY-MM-DD.")
+			return
+		}
+		schoolID, err := parseUUID(claims.SchoolID)
+		if err != nil {
+			writeErr(w, http.StatusUnauthorized, "INVALID_CLAIMS", "Token's school_id is not a valid UUID.")
+			return
+		}
+
+		var summary sqlc.GetSchoolAttendanceSummaryRow
+		err = db.WithRLSClaims(r.Context(), pool, db.RLSClaims{
+			Subject:  claims.Subject,
+			SchoolID: claims.SchoolID,
+			Role:     claims.Role,
+		}, func(tx pgx.Tx) error {
+			var err error
+			summary, err = sqlc.New(tx).GetSchoolAttendanceSummary(r.Context(), sqlc.GetSchoolAttendanceSummaryParams{
+				SchoolID: schoolID,
+				Date:     date,
+			})
+			return err
+		})
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "FETCH_FAILED", "Could not load attendance summary.")
+			return
+		}
+
+		pct := 0.0
+		if summary.TotalCount > 0 {
+			pct = float64(summary.PresentCount) / float64(summary.TotalCount) * 100
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"date":           dateStr,
+			"present_count":  summary.PresentCount,
+			"total_count":    summary.TotalCount,
+			"attendance_pct": pct,
+		})
 	}
 }

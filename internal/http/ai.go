@@ -87,20 +87,9 @@ func writeQuotaExceeded(w http.ResponseWriter, remaining int32) {
 }
 
 // requireTeacher gates the generation endpoints: the API contract lists
-// them as Teacher-only. Returns nil (after writing the response) when the
-// caller may not proceed. Cross-role access gets 404 per the tenant-leak
-// rule — role membership is tenant-internal information too.
+// them as Teacher-only.
 func requireTeacher(w http.ResponseWriter, r *http.Request) *middleware.Claims {
-	claims, ok := middleware.FromContext(r.Context())
-	if !ok {
-		writeErr(w, http.StatusUnauthorized, "MISSING_CLAIMS", "Authentication required.")
-		return nil
-	}
-	if claims.Role != "teacher" {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "Resource not found.")
-		return nil
-	}
-	return claims
+	return requireRoles(w, r, "teacher")
 }
 
 func rlsClaims(c *middleware.Claims) db.RLSClaims {

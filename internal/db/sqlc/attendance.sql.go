@@ -11,6 +11,53 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getAttendanceHistory = `-- name: GetAttendanceHistory :many
+SELECT ar.student_id, s.full_name, ar.date, ar.status
+FROM attendance_records ar
+JOIN students s ON s.id = ar.student_id
+WHERE ar.section_id = $1 AND ar.date BETWEEN $2 AND $3
+ORDER BY ar.date, s.full_name
+`
+
+type GetAttendanceHistoryParams struct {
+	SectionID pgtype.UUID `json:"section_id"`
+	FromDate  pgtype.Date `json:"from_date"`
+	ToDate    pgtype.Date `json:"to_date"`
+}
+
+type GetAttendanceHistoryRow struct {
+	StudentID pgtype.UUID `json:"student_id"`
+	FullName  string      `json:"full_name"`
+	Date      pgtype.Date `json:"date"`
+	Status    string      `json:"status"`
+}
+
+// Backs GET /api/:school/attendance/history?section_id=&from=&to=.
+func (q *Queries) GetAttendanceHistory(ctx context.Context, arg GetAttendanceHistoryParams) ([]GetAttendanceHistoryRow, error) {
+	rows, err := q.db.Query(ctx, getAttendanceHistory, arg.SectionID, arg.FromDate, arg.ToDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAttendanceHistoryRow
+	for rows.Next() {
+		var i GetAttendanceHistoryRow
+		if err := rows.Scan(
+			&i.StudentID,
+			&i.FullName,
+			&i.Date,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getFlaggedStudents = `-- name: GetFlaggedStudents :many
 WITH recent AS (
     SELECT
@@ -126,6 +173,35 @@ func (q *Queries) GetTodayAttendance(ctx context.Context, arg GetTodayAttendance
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateAttendanceStatus = `-- name: UpdateAttendanceStatus :one
+UPDATE attendance_records
+SET status = $2, edited_at = now(), edited_by = $3
+WHERE id = $1 AND date = $4
+RETURNING id
+`
+
+type UpdateAttendanceStatusParams struct {
+	ID       pgtype.UUID `json:"id"`
+	Status   string      `json:"status"`
+	EditedBy pgtype.UUID `json:"edited_by"`
+	Date     pgtype.Date `json:"date"`
+}
+
+// Backs PATCH /api/:school/attendance/:id. The date predicate enforces
+// the same-school-day-only edit rule (F-02) at the query level as well
+// as in the handler — an id from a past day matches zero rows.
+func (q *Queries) UpdateAttendanceStatus(ctx context.Context, arg UpdateAttendanceStatusParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, updateAttendanceStatus,
+		arg.ID,
+		arg.Status,
+		arg.EditedBy,
+		arg.Date,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const upsertAttendance = `-- name: UpsertAttendance :one

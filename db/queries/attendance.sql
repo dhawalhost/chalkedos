@@ -52,3 +52,20 @@ SELECT
     COUNT(*) AS total_count
 FROM attendance_records
 WHERE school_id = $1 AND date = $2;
+
+-- name: GetAttendanceHistory :many
+-- Backs GET /api/:school/attendance/history?section_id=&from=&to=.
+SELECT ar.student_id, s.full_name, ar.date, ar.status
+FROM attendance_records ar
+JOIN students s ON s.id = ar.student_id
+WHERE ar.section_id = $1 AND ar.date BETWEEN sqlc.arg(from_date) AND sqlc.arg(to_date)
+ORDER BY ar.date, s.full_name;
+
+-- name: UpdateAttendanceStatus :one
+-- Backs PATCH /api/:school/attendance/:id. The date predicate enforces
+-- the same-school-day-only edit rule (F-02) at the query level as well
+-- as in the handler — an id from a past day matches zero rows.
+UPDATE attendance_records
+SET status = $2, edited_at = now(), edited_by = $3
+WHERE id = $1 AND date = $4
+RETURNING id;
